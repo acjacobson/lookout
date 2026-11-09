@@ -68,8 +68,8 @@ struct MenuLabel: View {
         if count == 0 {
             Image(systemName: "binoculars")
         } else {
-            let symbol = store.needsCount > 0 ? "exclamationmark.bubble.fill" : "binoculars.fill"
-            Text("\(Image(systemName: symbol)) \(count)")
+            Image(nsImage: Badge.image(count: count))
+                .renderingMode(.original)
         }
     }
 }
