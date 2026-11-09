@@ -7,7 +7,7 @@
     <key>CFBundleDisplayName</key>
     <string>Lookout</string>
     <key>CFBundleIdentifier</key>
-    <string>local.lookout.Lookout</string>
+    <string>dev.lookout.Lookout</string>
     <key>CFBundleExecutable</key>
     <string>Lookout</string>
     <key>CFBundlePackageType</key>

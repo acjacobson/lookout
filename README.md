@@ -27,7 +27,15 @@ The Claude app's link takes only its own session IDs (`local_…`), not the Clau
 ./scripts/build-app.sh
 ```
 
-This builds `build/Lookout.app`, signed ad hoc. Copy it to `/Applications` before you turn on "Launch at Login".
+This builds `build/Lookout.app`. It signs the app with the first valid Apple Development certificate in your keychain, chosen by hash because expired certificates can have the same name. Set `LOOKOUT_SIGN_IDENTITY` to use another identity. Without a certificate it signs ad hoc, and macOS then refuses notifications ("Notifications are not allowed for this application") without asking. To create a certificate, open Xcode > Settings > Accounts > Manage Certificates and add an Apple Development certificate.
+
+Install it to `/Applications`, then turn on "Launch at Login" from the menu:
+
+```bash
+rm -rf /Applications/Lookout.app && cp -R build/Lookout.app /Applications/ && open /Applications/Lookout.app
+```
+
+macOS remembers a notification refusal by bundle ID. The bundle ID is `dev.lookout.Lookout`; the earlier `local.lookout.Lookout` was refused while the app was signed ad hoc.
 
 ## Install the hooks
 

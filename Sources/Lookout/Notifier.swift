@@ -9,7 +9,9 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
 
     func setUp() {
         center.delegate = self
-        center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
+        center.requestAuthorization(options: [.alert, .sound]) { granted, error in
+            NSLog("Lookout: notification permission granted=\(granted) error=\(String(describing: error))")
+        }
     }
 
     func post(_ s: Session) {
@@ -20,7 +22,9 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         content.sound = .default
         content.userInfo = ["key": s.id]
         // Same identifier per session, so a newer alert replaces the older one.
-        center.add(UNNotificationRequest(identifier: s.id, content: content, trigger: nil))
+        center.add(UNNotificationRequest(identifier: s.id, content: content, trigger: nil)) { error in
+            if let error { NSLog("Lookout: notification failed: \(error)") }
+        }
     }
 
     func remove(_ key: String) {
