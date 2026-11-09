@@ -138,13 +138,22 @@ struct MenuContent: View {
             Button {
                 open(s.id)
             } label: {
-                Text(label(s))
+                if let icon = AgentIcon.image(for: s.agent) {
+                    Label {
+                        Text(label(s, withAgent: false))
+                    } icon: {
+                        Image(nsImage: icon)
+                    }
+                } else {
+                    Text(label(s, withAgent: true))
+                }
             }
+            .help(s.agentName)
         }
     }
 
-    private func label(_ s: Session) -> String {
-        var parts = ["\(s.agentName): \(s.displayTitle)"]
+    private func label(_ s: Session, withAgent: Bool) -> String {
+        var parts = [withAgent ? "\(s.agentName): \(s.displayTitle)" : s.displayTitle]
         if let folder = s.folder, folder != s.displayTitle { parts.append(folder) }
         if let host = s.remoteHost { parts.append("on \(host)") }
         parts.append(relative(s.updatedAt))
