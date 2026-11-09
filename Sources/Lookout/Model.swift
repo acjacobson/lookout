@@ -1,0 +1,169 @@
+import Foundation
+
+enum SessionState: String, Codable {
+    case working
+    case needsInput
+    case done
+    case read
+}
+
+struct Session: Codable, Identifiable {
+    var id: String          // "<agent>:<sessionId>"
+    var agent: String
+    var sessionId: String
+    var state: SessionState
+    var updatedAt: Date
+    var cwd: String?
+    var title: String?
+    var detail: String?
+    var bundle: String?
+    var term: String?
+    var entrypoint: String?
+    var host: String?
+
+    /// The machine name, shown only for sessions on a machine other than this Mac.
+    var remoteHost: String? {
+        guard let host, !host.isEmpty else { return nil }
+        let local = ProcessInfo.processInfo.hostName.split(separator: ".").first.map(String.init)
+        return host.caseInsensitiveCompare(local ?? "") == .orderedSame ? nil : host
+    }
+
+    var agentName: String {
+        switch agent {
+        case "claude": return "Claude Code"
+        case "codex": return "Codex"
+        case "hermes": return "Hermes"
+        case "amp": return "Amp"
+        default: return agent.capitalized
+        }
+    }
+
+    var folder: String? {
+        guard let cwd, !cwd.isEmpty else { return nil }
+        return URL(fileURLWithPath: cwd).lastPathComponent
+    }
+
+    var displayTitle: String {
+        if let title, !title.isEmpty { return title }
+        return folder ?? String(sessionId.prefix(8))
+    }
+}
+
+/// One file from the inbox: a header line written by lookout-report, then the
+/// agent's raw hook payload.
+struct Event {
+    var agent: String
+    var state: String
+    var date: Date
+    var bundle: String?
+    var term: String?
+    var entrypoint: String?
+    var host: String?
+    var sessionId: String?
+    var cwd: String?
+    var prompt: String?
+    var title: String?
+    var detail: String?
+
+    static func parse(_ data: Data, fallbackDate: Date) -> Event? {
+        let newline = data.firstIndex(of: 0x0A) ?? data.endIndex
+        guard let header = (try? JSONSerialization.jsonObject(with: data[..<newline])) as? [String: Any],
+              let agent = header["agent"] as? String,
+              let state = header["state"] as? String
+        else { return nil }
+
+        let body = newline < data.endIndex ? data[data.index(after: newline)...] : Data()
+        let payload = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] ?? [:]
+
+        var event = Event(agent: agent, state: state, date: fallbackDate)
+        if let ts = header["ts"] as? Double, ts > 0, fallbackDate.timeIntervalSince1970 - ts > 5 {
+            event.date = Date(timeIntervalSince1970: ts)
+        }
+        event.bundle = nonEmpty(header["bundle"] as? String)
+        event.term = nonEmpty(header["term"] as? String)
+        event.entrypoint = nonEmpty(header["entrypoint"] as? String)
+        event.host = nonEmpty(header["host"] as? String)
+
+        let idKeys = ["session_id", "thread_id", "thread-id", "threadId", "sessionId"]
+        event.sessionId = string(payload, idKeys)
+        if event.sessionId == nil, !body.isEmpty {
+            // Payload cut off at 1 MB or not JSON: look for the id in the raw text.
+            event.sessionId = regexID(in: body)
+        }
+        event.cwd = string(payload, ["cwd", "workspace"])
+        event.title = string(payload, ["title"])
+        event.prompt = stripInjected(string(payload, ["prompt", "user_message"]))
+        event.detail = detail(for: state, payload)
+        return event
+    }
+
+    private static func detail(for state: String, _ p: [String: Any]) -> String? {
+        switch state {
+        case "needs":
+            if let tool = string(p, ["tool_name"]) {
+                let input = p["tool_input"] as? [String: Any] ?? [:]
+                if tool == "AskUserQuestion",
+                   let questions = input["questions"] as? [[String: Any]],
+                   let q = questions.first?["question"] as? String {
+                    return tidy(q)
+                }
+                if let what = string(input, ["description", "command", "file_path", "path"]) {
+                    return tidy("\(tool): \(what)")
+                }
+                return tool
+            }
+            return tidy(string(p, ["message", "prompt", "description"]))
+        case "done":
+            return tidy(string(p, ["last_assistant_message", "last-assistant-message", "summary"]))
+        default:
+            return nil
+        }
+    }
+
+    private static func nonEmpty(_ s: String?) -> String? {
+        guard let s, !s.isEmpty else { return nil }
+        return s
+    }
+
+    /// Looks up the first non-empty string among `keys`, at the top level and in
+    /// Hermes's "extra" dictionary.
+    static func string(_ d: [String: Any], _ keys: [String]) -> String? {
+        for key in keys {
+            if let s = d[key] as? String, !s.isEmpty { return s }
+        }
+        if let extra = d["extra"] as? [String: Any] {
+            for key in keys {
+                if let s = extra[key] as? String, !s.isEmpty { return s }
+            }
+        }
+        return nil
+    }
+
+    static func tidy(_ s: String?, limit: Int = 160) -> String? {
+        guard let s else { return nil }
+        let collapsed = s.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+        guard !collapsed.isEmpty else { return nil }
+        return collapsed.count > limit ? String(collapsed.prefix(limit - 1)) + "…" : collapsed
+    }
+
+    /// Removes blocks an app adds to the user's prompt before the hook sees it, such as
+    /// the Claude app's `<system-reminder>…</system-reminder>`, so the title is what you typed.
+    static func stripInjected(_ s: String?) -> String? {
+        guard var text = s else { return nil }
+        let pattern = #"<(system-reminder|system|context|environment_context|user_instructions|command-[a-z-]+|local-command-[a-z-]+)\b[^>]*>[\s\S]*?</\1>"#
+        if let re = try? NSRegularExpression(pattern: pattern) {
+            text = re.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: " ")
+        }
+        text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? nil : text
+    }
+
+    private static func regexID(in body: Data) -> String? {
+        guard let text = String(data: body.prefix(4096), encoding: .utf8),
+              let re = try? NSRegularExpression(pattern: #""(?:session_id|thread_id|thread-id)"\s*:\s*"([^"]+)""#),
+              let m = re.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+              let r = Range(m.range(at: 1), in: text)
+        else { return nil }
+        return String(text[r])
+    }
+}

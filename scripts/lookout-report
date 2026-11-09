@@ -1,0 +1,73 @@
+#!/bin/sh
+# lookout-report <agent> <state>
+#
+# Called by agent hooks. Reads the hook's JSON payload from stdin and hands it,
+# with a one-line header, to the Lookout menu bar app:
+#
+# - on the Mac running Lookout, as a file in ~/.lookout/inbox;
+# - on another machine, when ~/.lookout/remote.env sets LOOKOUT_URL and
+#   LOOKOUT_TOKEN, as an HTTP POST to that Lookout over Tailscale.
+#
+# <state> is one of: prompt, working, needs, done, end.
+#
+# It never blocks the agent: the POST runs in the background with a 3-second
+# limit, and every failure exits 0 without output, so the hook makes no decision.
+
+# Home folder: $LOOKOUT_HOME, else the folder above this script's bin/ when it
+# holds a remote.env (a copy inside a Hermes home, for Docker), else ~/.lookout.
+here=$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)
+if [ -n "${LOOKOUT_HOME:-}" ]; then
+  home="$LOOKOUT_HOME"
+elif [ -n "$here" ] && [ -f "$here/remote.env" ]; then
+  home="$here"
+else
+  home="$HOME/.lookout"
+fi
+agent=$(printf %s "${1:-unknown}" | tr -cd 'a-z0-9_-')
+state=$(printf %s "${2:-unknown}" | tr -cd 'a-z0-9_-')
+
+LOOKOUT_URL=""
+LOOKOUT_TOKEN=""
+# shellcheck disable=SC1091
+[ -f "$home/remote.env" ] && . "$home/remote.env"
+
+if [ -n "$LOOKOUT_URL" ]; then
+  dir="$home/outbox"
+else
+  dir="$home/inbox"
+fi
+[ -d "$dir" ] || mkdir -p "$dir" 2>/dev/null || exit 0
+
+clean() { printf %s "$1" | tr -cd 'A-Za-z0-9._:/-' | cut -c1-200; }
+
+# __CFBundleIdentifier is set by macOS for processes started from an app bundle
+# and inherited by child processes, so it names the app the agent runs in.
+bundle=$(clean "${__CFBundleIdentifier:-}")
+term=$(clean "${TERM_PROGRAM:-}")
+entry=$(clean "${CLAUDE_CODE_ENTRYPOINT:-}")
+host=$(clean "$(hostname -s 2>/dev/null)")
+ts=$(date +%s)
+tmp="$dir/.tmp.$$.$ts"
+
+{
+  printf '{"agent":"%s","state":"%s","ts":%s,"bundle":"%s","term":"%s","entrypoint":"%s","host":"%s"}\n' \
+    "$agent" "$state" "$ts" "$bundle" "$term" "$entry" "$host"
+  if [ ! -t 0 ]; then head -c 1048576; fi
+} >"$tmp" 2>/dev/null || { rm -f "$tmp"; exit 0; }
+
+if [ -n "$LOOKOUT_URL" ]; then
+  # Ignore hang-up and interrupt signals, so the POST still completes when the
+  # hook's caller (sudo, or an agent that cleans up the hook's process group)
+  # exits first.
+  (
+    trap '' HUP INT TERM
+    curl -fsS -m 3 -X POST -H "Authorization: Bearer $LOOKOUT_TOKEN" \
+      -H "Content-Type: application/octet-stream" --data-binary "@$tmp" \
+      "$LOOKOUT_URL/event" >/dev/null 2>&1
+    rm -f "$tmp"
+  ) </dev/null >/dev/null 2>&1 &
+  exit 0
+fi
+
+mv "$tmp" "$dir/$ts-$$-$agent-$state.json" 2>/dev/null || rm -f "$tmp"
+exit 0
