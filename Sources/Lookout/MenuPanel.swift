@@ -84,12 +84,12 @@ struct MenuContent: View {
                 .padding(.top, 8)
                 .padding(.bottom, 2)
             ForEach(sessions) { s in
-                SessionRow(session: s) {
+                SessionRow(session: s, action: {
                     // Close the panel first: once the target app is active there is
                     // no key window left to close.
                     NSApp.keyWindow?.close()
                     open(s.id)
-                }
+                }, dismiss: { store.dismiss(s.id) })
             }
         }
     }
@@ -116,9 +116,35 @@ struct MenuContent: View {
 struct SessionRow: View {
     let session: Session
     let action: () -> Void
+    let dismiss: () -> Void
     @State private var hovering = false
 
+    /// Working rows have no dismiss button: the agent's next event would bring them back.
+    private var canDismiss: Bool { session.state != .working }
+
     var body: some View {
+        // The dismiss button sits over the row rather than inside its button, so a
+        // click on it doesn't also open the session.
+        ZStack(alignment: .topTrailing) {
+            rowButton
+            if hovering && canDismiss {
+                Button(action: dismiss) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 14))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 22, height: 22)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Dismiss")
+                .padding(.top, 4)
+                .padding(.trailing, 10)
+            }
+        }
+        .onHover { hovering = $0 }
+    }
+
+    private var rowButton: some View {
         Button(action: action) {
             HStack(alignment: .top, spacing: 10) {
                 AgentIconView(agent: session.agent, name: session.agentName)
@@ -139,7 +165,6 @@ struct SessionRow: View {
             .padding(.horizontal, 4)
         }
         .buttonStyle(.plain)
-        .onHover { hovering = $0 }
         .help(session.agentName)
     }
 
@@ -175,6 +200,9 @@ struct SessionRow: View {
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
             }
+            // Hidden, not removed, while the dismiss button covers it, so the
+            // title doesn't change width on hover.
+            .opacity(hovering && canDismiss ? 0 : 1)
             .layoutPriority(2)
         }
     }

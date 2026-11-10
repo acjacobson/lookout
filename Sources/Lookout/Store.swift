@@ -137,6 +137,15 @@ final class Store: ObservableObject {
         save()
     }
 
+    /// Removes one row and its notification. The session gets a new row with its
+    /// next event, such as the next prompt.
+    func dismiss(_ key: String) {
+        guard sessions[key] != nil else { return }
+        sessions[key] = nil
+        onCleared?(key)
+        save()
+    }
+
     func clearFinished() {
         for (key, s) in sessions where s.state == .done || s.state == .read {
             sessions[key] = nil
