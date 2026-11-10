@@ -283,14 +283,17 @@ struct AgentIconView: View {
     }
 }
 
-/// The gear menu in the header: remote agent setup and Launch at Login.
+/// The gear menu in the header: notifications, remote agent setup and Launch at Login.
 struct SettingsMenu: View {
     @ObservedObject var listener: Listener
     let copyRemoteSetup: () -> Void
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
+    @AppStorage(Notifier.enabledKey) private var notificationsEnabled = true
 
     var body: some View {
         Menu {
+            Toggle("Notifications", isOn: $notificationsEnabled)
+            Divider()
             if let base = listener.baseURL {
                 Text("Remote agents: \(base)")
                 Button("Copy Setup Command for Another Machine") { copyRemoteSetup() }

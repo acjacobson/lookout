@@ -14,7 +14,16 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         }
     }
 
+    /// The UserDefaults key for the Notifications toggle in the gear menu.
+    static let enabledKey = "notificationsEnabled"
+
+    /// On unless turned off in the gear menu.
+    static var enabled: Bool {
+        UserDefaults.standard.object(forKey: enabledKey) as? Bool ?? true
+    }
+
     func post(_ s: Session) {
+        guard Notifier.enabled else { return }
         let content = UNMutableNotificationContent()
         content.title = s.state == .needsInput ? "\(s.agentName) needs a decision" : "\(s.agentName) is done"
         content.subtitle = [s.folder, s.displayTitle].compactMap { $0 }.uniqued().joined(separator: " · ")

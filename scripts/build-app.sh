@@ -10,6 +10,30 @@ rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp .build/release/Lookout "$app/Contents/MacOS/Lookout"
 cp Support/Info.plist "$app/Contents/Info.plist"
+cp Support/AppIcon.icns "$app/Contents/Resources/AppIcon.icns"  # made by scripts/make-icon.swift
+# Also compile the icon into an asset catalog (Assets.car), named by CFBundleIconName
+# in Info.plist. macOS 26 Notification Center shows a blank icon for an app that has
+# only the .icns file. actool comes with Xcode; without it the .icns is used alone.
+if xcrun --find actool >/dev/null 2>&1; then
+  work=$(mktemp -d)
+  iconutil -c iconset Support/AppIcon.icns -o "$work/AppIcon.iconset"
+  set_dir="$work/Assets.xcassets/AppIcon.appiconset"
+  mkdir -p "$set_dir"
+  printf '{"info":{"version":1,"author":"xcode"}}' >"$work/Assets.xcassets/Contents.json"
+  images=""
+  for base in 16 32 128 256 512; do
+    for scale in 1 2; do
+      if [ "$scale" = 1 ]; then f="icon_${base}x${base}.png"; else f="icon_${base}x${base}@2x.png"; fi
+      cp "$work/AppIcon.iconset/$f" "$set_dir/$f"
+      images="$images{\"idiom\":\"mac\",\"size\":\"${base}x${base}\",\"scale\":\"${scale}x\",\"filename\":\"$f\"},"
+    done
+  done
+  printf '{"images":[%s],"info":{"version":1,"author":"xcode"}}' "${images%,}" >"$set_dir/Contents.json"
+  xcrun actool "$work/Assets.xcassets" --compile "$app/Contents/Resources" --platform macosx \
+    --minimum-deployment-target 13.0 --app-icon AppIcon \
+    --output-partial-info-plist "$work/partial.plist" >/dev/null
+  rm -rf "$work"
+fi
 cp scripts/lookout-report "$app/Contents/Resources/lookout-report"
 cp scripts/lookout-hooks.py "$app/Contents/Resources/lookout-hooks.py"
 # Sign with an Apple Development certificate when one exists. macOS refuses
