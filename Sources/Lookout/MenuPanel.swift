@@ -48,6 +48,7 @@ struct MenuContent: View {
             footer(done: done.count, finished: done.count + read.count)
         }
         .frame(width: 420)
+        .background(PanelBackground().ignoresSafeArea())
     }
 
     // MARK: Parts
@@ -316,4 +317,19 @@ struct SettingsMenu: View {
         .menuIndicator(.hidden)
         .fixedSize()
     }
+}
+
+/// The menu material behind the panel. The panel's own background follows the
+/// window's active state, and Lookout is never the active app, so macOS draws the
+/// inactive, nearly transparent version. This one stays active.
+struct PanelBackground: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = .menu
+        view.blendingMode = .behindWindow
+        view.state = .active
+        return view
+    }
+
+    func updateNSView(_ view: NSVisualEffectView, context: Context) {}
 }
