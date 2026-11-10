@@ -38,14 +38,48 @@ struct Session: Codable, Identifiable {
         }
     }
 
+    /// A short name for the working folder: the repository for a worktree under
+    /// `<repo>/.claude/worktrees/…`, "scratch" for the Claude app's scratch folders,
+    /// otherwise the last path component without a date or a generated ID suffix.
     var folder: String? {
         guard let cwd, !cwd.isEmpty else { return nil }
-        return URL(fileURLWithPath: cwd).lastPathComponent
+        let parts = cwd.split(separator: "/").map(String.init)
+        if let i = parts.lastIndex(of: "worktrees"), i >= 2, parts[i - 1].hasPrefix(".") {
+            return parts[i - 2]
+        }
+        if parts.contains("scratch-workspaces") { return "scratch" }
+        guard let last = parts.last else { return nil }
+        return Session.trimGenerated(last)
+    }
+
+    /// Removes `-2026-11-10` dates and a trailing six-character hex ID such as
+    /// `-834281` or `-e14425`. The ID must contain a digit, so `-facade` stays.
+    static func trimGenerated(_ name: String) -> String {
+        var s = name.replacingOccurrences(of: #"-\d{4}-\d{2}-\d{2}"#, with: "", options: .regularExpression)
+        s = s.replacingOccurrences(of: #"-(?=[0-9a-f]*[0-9])[0-9a-f]{6}$"#, with: "", options: .regularExpression)
+        return s.isEmpty ? name : s
     }
 
     var displayTitle: String {
         if let title, !title.isEmpty { return title }
         return folder ?? String(sessionId.prefix(8))
+    }
+
+    /// `detail` as one line of plain text: Markdown links, code marks, emphasis and
+    /// list or heading markers removed.
+    var plainDetail: String? {
+        guard var text = detail else { return nil }
+        let rules: [(String, String)] = [
+            (#"\[([^\]]*)\]\([^)]*\)"#, "$1"),   // [text](url) -> text
+            (#"`+"#, ""),
+            (#"\*\*|__"#, ""),
+            (#"^(?:[-*+]|#+|\d+\.)\s+"#, ""),     // leading list or heading marker
+        ]
+        for (pattern, template) in rules {
+            text = text.replacingOccurrences(of: pattern, with: template, options: .regularExpression)
+        }
+        text = text.trimmingCharacters(in: .whitespaces)
+        return text.isEmpty ? nil : text
     }
 }
 
@@ -156,6 +190,23 @@ struct Event {
         }
         text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         return text.isEmpty ? nil : text
+    }
+
+    /// The title shown for a session, made from the user's prompt: injected blocks,
+    /// pasted text and code fences removed, file mentions shortened to the file name.
+    /// Handles titles cut off mid-block, as saved titles are cut at a length limit.
+    static func cleanTitle(_ s: String?) -> String? {
+        guard var text = stripInjected(s) else { return nil }
+        let rules: [(String, String)] = [
+            (#"<pasted_content\b[\s\S]*?(?:</pasted_content>|$)"#, " "),
+            (#"```[\s\S]*?(?:```|$)"#, " "),
+            (#"<[A-Za-z_][^>]*$"#, " "),                              // tag cut off at the end
+            (#"@"?(?:/[^\s"/]+)*/([^\s"/]+)"?"#, "@$1"),           // @"/a/b/file.py" -> @file.py
+        ]
+        for (pattern, template) in rules {
+            text = text.replacingOccurrences(of: pattern, with: template, options: .regularExpression)
+        }
+        return tidy(text, limit: 100) ?? "[pasted text]"
     }
 
     private static func regexID(in body: Data) -> String? {

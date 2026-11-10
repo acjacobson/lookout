@@ -17,7 +17,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     func post(_ s: Session) {
         let content = UNMutableNotificationContent()
         content.title = s.state == .needsInput ? "\(s.agentName) needs a decision" : "\(s.agentName) is done"
-        content.subtitle = [s.displayTitle, s.folder].compactMap { $0 }.uniqued().joined(separator: " · ")
+        content.subtitle = [s.folder, s.displayTitle].compactMap { $0 }.uniqued().joined(separator: " · ")
         content.body = s.detail ?? ""
         content.sound = .default
         content.userInfo = ["key": s.id]

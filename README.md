@@ -29,7 +29,7 @@ The Claude app's link takes only its own session IDs (`local_…`), not the Clau
 
 This builds `build/Lookout.app`. It signs the app with the first valid Apple Development certificate in your keychain, chosen by hash because expired certificates can have the same name. Set `LOOKOUT_SIGN_IDENTITY` to use another identity. Without a certificate it signs ad hoc, and macOS then refuses notifications ("Notifications are not allowed for this application") without asking. To create a certificate, open Xcode > Settings > Accounts > Manage Certificates and add an Apple Development certificate.
 
-Install it to `/Applications`, then turn on "Launch at Login" from the menu:
+Install it to `/Applications`, then turn on "Launch at Login" from the gear menu in the panel:
 
 ```bash
 rm -rf /Applications/Lookout.app && cp -R build/Lookout.app /Applications/ && open /Applications/Lookout.app

@@ -82,9 +82,8 @@ final class Store: ObservableObject {
         if let v = e.entrypoint { s.entrypoint = v }
         if let v = e.host { s.host = v }
         if let v = e.cwd { s.cwd = v }
-        if let v = e.title { s.title = Event.tidy(v, limit: 60) }
-        if s.title?.hasPrefix("<") == true { s.title = nil }  // titles saved before tag stripping
-        if s.title == nil, e.state == "prompt", let p = e.prompt { s.title = Event.tidy(p, limit: 60) }
+        if let v = e.title { s.title = Event.tidy(v, limit: 100) }
+        if s.title == nil, e.state == "prompt", let p = e.prompt { s.title = Event.cleanTitle(p) }
         s.updatedAt = max(s.updatedAt, e.date)
 
         switch e.state {
@@ -186,7 +185,13 @@ final class Store: ObservableObject {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .secondsSince1970
         if let list = try? decoder.decode([Session].self, from: data) {
-            sessions = Dictionary(list.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+            // Titles saved by earlier versions can still hold pasted text or tags.
+            let cleaned = list.map { s -> Session in
+                var s = s
+                s.title = Event.cleanTitle(s.title)
+                return s
+            }
+            sessions = Dictionary(cleaned.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         }
     }
 

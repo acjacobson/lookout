@@ -1,5 +1,4 @@
 import SwiftUI
-import ServiceManagement
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let store = Store()
@@ -56,7 +55,7 @@ struct LookoutApp: App {
         } label: {
             MenuLabel(store: delegate.store)
         }
-        .menuBarExtraStyle(.menu)
+        .menuBarExtraStyle(.window)
     }
 }
 
@@ -71,100 +70,5 @@ struct MenuLabel: View {
             Image(nsImage: Badge.image(count: count))
                 .renderingMode(.original)
         }
-    }
-}
-
-struct MenuContent: View {
-    @ObservedObject var store: Store
-    @ObservedObject var listener: Listener
-    let open: (String) -> Void
-    let copyRemoteSetup: () -> Void
-    @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
-
-    var body: some View {
-        let needs = store.list(.needsInput)
-        let done = store.list(.done)
-        let working = store.list(.working)
-        let read = Array(store.list(.read).prefix(5))
-
-        if needs.isEmpty && done.isEmpty && working.isEmpty && read.isEmpty {
-            Text("No agent sessions yet")
-        }
-        if !needs.isEmpty {
-            Section("Needs a decision") { rows(needs) }
-        }
-        if !done.isEmpty {
-            Section("Done, not read") { rows(done) }
-        }
-        if !working.isEmpty {
-            Section("Working") { rows(working) }
-        }
-        if !read.isEmpty {
-            Section("Read") { rows(read) }
-        }
-
-        Divider()
-        Button("Mark All as Read") { store.markAllRead() }
-            .disabled(done.isEmpty)
-        Button("Clear Finished") { store.clearFinished() }
-            .disabled(done.isEmpty && read.isEmpty)
-        Divider()
-        if let base = listener.baseURL {
-            Text("Remote agents: \(base)")
-            Button("Copy Setup Command for Another Machine") { copyRemoteSetup() }
-        } else if listener.config.enabled {
-            Text("Remote agents: waiting for Tailscale")
-        }
-        Divider()
-        Toggle("Launch at Login", isOn: Binding(
-            get: { launchAtLogin },
-            set: { on in
-                do {
-                    if on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
-                } catch {
-                    NSLog("Lookout: launch at login change failed: \(error)")
-                }
-                launchAtLogin = SMAppService.mainApp.status == .enabled
-            }
-        ))
-        Divider()
-        Button("Quit Lookout") { NSApp.terminate(nil) }
-            .keyboardShortcut("q")
-    }
-
-    @ViewBuilder
-    private func rows(_ list: [Session]) -> some View {
-        ForEach(list) { s in
-            Button {
-                open(s.id)
-            } label: {
-                if let icon = AgentIcon.image(for: s.agent) {
-                    Label {
-                        Text(label(s, withAgent: false))
-                    } icon: {
-                        Image(nsImage: icon)
-                    }
-                } else {
-                    Text(label(s, withAgent: true))
-                }
-            }
-            .help(s.agentName)
-        }
-    }
-
-    private func label(_ s: Session, withAgent: Bool) -> String {
-        var parts = [withAgent ? "\(s.agentName): \(s.displayTitle)" : s.displayTitle]
-        if let folder = s.folder, folder != s.displayTitle { parts.append(folder) }
-        if let host = s.remoteHost { parts.append("on \(host)") }
-        parts.append(relative(s.updatedAt))
-        return parts.joined(separator: " · ")
-    }
-
-    private func relative(_ date: Date) -> String {
-        let seconds = Int(Date().timeIntervalSince(date))
-        if seconds < 60 { return "now" }
-        if seconds < 3600 { return "\(seconds / 60) min" }
-        if seconds < 86400 { return "\(seconds / 3600) h" }
-        return "\(seconds / 86400) d"
     }
 }
