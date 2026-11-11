@@ -49,15 +49,9 @@ struct MenuContent: View {
         }
         .frame(width: 420)
         .fixedSize(horizontal: false, vertical: true)
-        .background(GeometryReader { geo in
-            Color.clear.preference(key: ContentSizeKey.self, value: geo.size)
-        })
-        .onPreferenceChange(ContentSizeKey.self) { contentSize = $0 }
-        .background(WindowFitter(size: contentSize))
+        .background(WindowFitter())
         .background(PanelBackground().ignoresSafeArea())
     }
-
-    @State private var contentSize: CGSize = .zero
 
     // MARK: Parts
 
@@ -345,27 +339,22 @@ struct PanelBackground: NSViewRepresentable {
     func updateNSView(_ view: NSVisualEffectView, context: Context) {}
 }
 
-private struct ContentSizeKey: PreferenceKey {
-    static var defaultValue: CGSize = .zero
-    static func reduce(value: inout CGSize, nextValue: () -> CGSize) { value = nextValue() }
-}
-
-/// Resizes the panel window to the content. The menu bar window keeps the largest
-/// size it has had, so after rows go away the content sat in the middle of an
-/// oversized window whose empty part showed through.
+/// Keeps the panel window the same height as the panel content. When rows go away,
+/// SwiftUI shrinks the content but not the menu bar window, and draws the content
+/// centered in the old window with see-through strips above and below it. This view
+/// sits behind the content, so its size changes with the content's, and it resizes
+/// the window in the same layout pass, before anything is drawn.
 struct WindowFitter: NSViewRepresentable {
-    let size: CGSize
-
     func makeNSView(context: Context) -> FitterView { FitterView() }
-
-    func updateNSView(_ view: FitterView, context: Context) {
-        view.size = size
-        view.fit()
-    }
+    func updateNSView(_ view: FitterView, context: Context) {}
 
     final class FitterView: NSView {
-        var size: CGSize = .zero
         private var observer: NSObjectProtocol?
+
+        override func setFrameSize(_ newSize: NSSize) {
+            super.setFrameSize(newSize)
+            fit()
+        }
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
@@ -379,16 +368,14 @@ struct WindowFitter: NSViewRepresentable {
             fit()
         }
 
-        func fit() {
-            DispatchQueue.main.async { [weak self] in
-                guard let self, let window = self.window, self.size.height > 0 else { return }
-                let current = window.contentRect(forFrameRect: window.frame)
-                guard abs(current.height - self.size.height) > 0.5
-                    || abs(current.width - self.size.width) > 0.5 else { return }
-                var frame = window.frameRect(forContentRect: NSRect(origin: current.origin, size: self.size))
-                frame.origin.y = window.frame.maxY - frame.height  // keep the top under the menu bar
-                window.setFrame(frame, display: true)
-            }
+        private func fit() {
+            guard let window, bounds.height > 0 else { return }
+            let current = window.contentRect(forFrameRect: window.frame)
+            guard abs(current.height - bounds.height) > 0.5 else { return }
+            var frame = window.frameRect(forContentRect: NSRect(
+                x: current.minX, y: current.minY, width: current.width, height: bounds.height))
+            frame.origin.y = window.frame.maxY - frame.height  // keep the top under the menu bar
+            window.setFrame(frame, display: true)
         }
 
         deinit {
