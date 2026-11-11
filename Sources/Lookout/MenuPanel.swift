@@ -48,8 +48,16 @@ struct MenuContent: View {
             footer(done: done.count, finished: done.count + read.count)
         }
         .frame(width: 420)
+        .fixedSize(horizontal: false, vertical: true)
+        .background(GeometryReader { geo in
+            Color.clear.preference(key: ContentSizeKey.self, value: geo.size)
+        })
+        .onPreferenceChange(ContentSizeKey.self) { contentSize = $0 }
+        .background(WindowFitter(size: contentSize))
         .background(PanelBackground().ignoresSafeArea())
     }
+
+    @State private var contentSize: CGSize = .zero
 
     // MARK: Parts
 
@@ -335,4 +343,56 @@ struct PanelBackground: NSViewRepresentable {
     }
 
     func updateNSView(_ view: NSVisualEffectView, context: Context) {}
+}
+
+private struct ContentSizeKey: PreferenceKey {
+    static var defaultValue: CGSize = .zero
+    static func reduce(value: inout CGSize, nextValue: () -> CGSize) { value = nextValue() }
+}
+
+/// Resizes the panel window to the content. The menu bar window keeps the largest
+/// size it has had, so after rows go away the content sat in the middle of an
+/// oversized window whose empty part showed through.
+struct WindowFitter: NSViewRepresentable {
+    let size: CGSize
+
+    func makeNSView(context: Context) -> FitterView { FitterView() }
+
+    func updateNSView(_ view: FitterView, context: Context) {
+        view.size = size
+        view.fit()
+    }
+
+    final class FitterView: NSView {
+        var size: CGSize = .zero
+        private var observer: NSObjectProtocol?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if let observer { NotificationCenter.default.removeObserver(observer) }
+            observer = nil
+            guard let window else { return }
+            // The window is reused each time the panel opens.
+            observer = NotificationCenter.default.addObserver(
+                forName: NSWindow.didBecomeKeyNotification, object: window, queue: .main
+            ) { [weak self] _ in self?.fit() }
+            fit()
+        }
+
+        func fit() {
+            DispatchQueue.main.async { [weak self] in
+                guard let self, let window = self.window, self.size.height > 0 else { return }
+                let current = window.contentRect(forFrameRect: window.frame)
+                guard abs(current.height - self.size.height) > 0.5
+                    || abs(current.width - self.size.width) > 0.5 else { return }
+                var frame = window.frameRect(forContentRect: NSRect(origin: current.origin, size: self.size))
+                frame.origin.y = window.frame.maxY - frame.height  // keep the top under the menu bar
+                window.setFrame(frame, display: true)
+            }
+        }
+
+        deinit {
+            if let observer { NotificationCenter.default.removeObserver(observer) }
+        }
+    }
 }
