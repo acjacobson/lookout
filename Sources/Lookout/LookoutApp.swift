@@ -1,4 +1,7 @@
 import SwiftUI
+import os
+
+private let log = Logger(subsystem: "lookout", category: "notify")
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let store = Store()
@@ -8,7 +11,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         notifier.onOpen = { [weak self] key in self?.open(key) }
-        store.onAttention = { [weak self] s in self?.notifier.post(s) }
+        store.onAttention = { [weak self] s in
+            // You are already looking at the app this session runs in, so the alert
+            // would only repeat what is on screen. The menu bar badge still counts it.
+            if let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
+               s.agentAppBundles.contains(front) {
+                log.notice("no notification for \(s.id, privacy: .public): \(front, privacy: .public) is frontmost")
+                return
+            }
+            log.notice("notifying for \(s.id, privacy: .public)")
+            self?.notifier.post(s)
+        }
         store.onCleared = { [weak self] key in self?.notifier.remove(key) }
         notifier.setUp()
         store.start()

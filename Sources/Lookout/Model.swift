@@ -60,6 +60,33 @@ struct Session: Codable, Identifiable {
         return s.isEmpty ? name : s
     }
 
+    /// Bundle IDs of the agent's own app when the session runs inside it, such as
+    /// the Claude app or the ChatGPT app for Codex. Empty for sessions in a
+    /// terminal or editor, where the frontmost app does not tell which tab is in view.
+    var agentAppBundles: [String] {
+        guard remoteHost == nil else { return [] }
+        switch agent {
+        case "claude":
+            if entrypoint == "claude-desktop" || bundle == "com.anthropic.claudefordesktop" {
+                return ["com.anthropic.claudefordesktop"]
+            }
+        case "codex":
+            // Same test as Opener: no terminal and no bundle means the app.
+            if bundle == "com.openai.codex" || (term == nil && bundle == nil) {
+                return ["com.openai.codex", "com.openai.chat"]
+            }
+        case "amp":
+            if term == nil && bundle == nil { return ["com.ampcode.amp.macos"] }
+        case "hermes":
+            if term == nil {
+                return ["com.nousresearch.hermes", "com.nousresearch.hermes.setup"] + [bundle].compactMap { $0 }
+            }
+        default:
+            break
+        }
+        return []
+    }
+
     var displayTitle: String {
         if let title, !title.isEmpty { return title }
         return folder ?? String(sessionId.prefix(8))
