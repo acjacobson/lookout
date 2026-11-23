@@ -136,7 +136,8 @@ struct Event {
         let body = newline < data.endIndex ? data[data.index(after: newline)...] : Data()
         let payload = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] ?? [:]
 
-        var event = Event(agent: agent, state: state, date: fallbackDate)
+        var event = Event(agent: agent, state: isHermesTeardown(agent, state, payload) ? "end" : state,
+                          date: fallbackDate)
         if let ts = header["ts"] as? Double, ts > 0, fallbackDate.timeIntervalSince1970 - ts > 5 {
             event.date = Date(timeIntervalSince1970: ts)
         }
@@ -156,6 +157,18 @@ struct Event {
         event.prompt = stripInjected(string(payload, ["prompt", "user_message"]))
         event.detail = detail(for: state, payload)
         return event
+    }
+
+    /// Hermes fires `on_session_end` after every turn, and also when the gateway or CLI
+    /// closes a session it holds, for example on shutdown. The closing call passes
+    /// `interrupted: true` and no `turn_id`, while the end-of-turn call always passes
+    /// a `turn_id`. A closed session has not finished anything new, so it counts as "end".
+    static func isHermesTeardown(_ agent: String, _ state: String, _ payload: [String: Any]) -> Bool {
+        guard agent == "hermes", state == "done" else { return false }
+        let extra = payload["extra"] as? [String: Any] ?? [:]
+        let interrupted = (extra["interrupted"] as? Bool) ?? (payload["interrupted"] as? Bool) ?? false
+        let turnID = extra["turn_id"] ?? payload["turn_id"]
+        return interrupted && (turnID == nil || turnID is NSNull)
     }
 
     private static func detail(for state: String, _ p: [String: Any]) -> String? {
