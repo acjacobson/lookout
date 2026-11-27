@@ -35,6 +35,7 @@ struct Session: Codable, Identifiable {
         case "hermes": return "Hermes"
         case "amp": return "Amp"
         case "antigravity": return "Antigravity"
+        case "cursor": return "Cursor"
         default: return agent.capitalized
         }
     }
@@ -85,6 +86,8 @@ struct Session: Codable, Identifiable {
             }
         case "antigravity":
             if let app = Session.antigravityApps[entrypoint ?? ""] { return [app] }
+        case "cursor":
+            if bundle == Session.cursorApp { return [Session.cursorApp] }
         default:
             break
         }
@@ -97,6 +100,8 @@ struct Session: Codable, Identifiable {
         "antigravity": "com.google.antigravity",
         "antigravity-ide": "com.google.antigravity-ide",
     ]
+
+    static let cursorApp = "com.todesktop.230313mzl4w4u92"
 
     var displayTitle: String {
         if let title, !title.isEmpty { return title }
@@ -157,13 +162,14 @@ struct Event {
         event.entrypoint = nonEmpty(header["entrypoint"] as? String)
         event.host = nonEmpty(header["host"] as? String)
 
-        let idKeys = ["session_id", "thread_id", "thread-id", "threadId", "sessionId", "conversationId"]
+        let idKeys = ["session_id", "thread_id", "thread-id", "threadId", "sessionId", "conversationId", "conversation_id"]
         event.sessionId = string(payload, idKeys)
         if event.sessionId == nil, !body.isEmpty {
             // Payload cut off at 1 MB or not JSON: look for the id in the raw text.
             event.sessionId = regexID(in: body)
         }
-        event.cwd = string(payload, ["cwd", "workspace"]) ?? (payload["workspacePaths"] as? [String])?.first
+        event.cwd = string(payload, ["cwd", "workspace"]) 
+            ?? (payload["workspacePaths"] as? [String])?.first ?? (payload["workspace_roots"] as? [String])?.first
         event.title = string(payload, ["title"])
         event.prompt = stripInjected(string(payload, ["prompt", "user_message", "lastUserInput"]))
         if agent == "antigravity" {
@@ -204,7 +210,13 @@ struct Event {
             }
             return tidy(string(p, ["message", "prompt", "description"]))
         case "done":
+            if string(p, ["status"]) == "error" {
+                return tidy("Error: \(string(p, ["error_message"]) ?? "the agent stopped")")
+            }
             return tidy(string(p, ["last_assistant_message", "last-assistant-message", "summary"]))
+        case "reply":
+            // Cursor's afterAgentResponse: the agent's message, kept for the "done" row.
+            return tidy(string(p, ["text"]))
         default:
             return nil
         }
@@ -323,7 +335,7 @@ struct Event {
 
     private static func regexID(in body: Data) -> String? {
         guard let text = String(data: body.prefix(4096), encoding: .utf8),
-              let re = try? NSRegularExpression(pattern: #""(?:session_id|thread_id|thread-id|conversationId)"\s*:\s*"([^"]+)""#),
+              let re = try? NSRegularExpression(pattern: #""(?:session_id|thread_id|thread-id|conversationId|conversation_id)"\s*:\s*"([^"]+)""#),
               let m = re.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
               let r = Range(m.range(at: 1), in: text)
         else { return nil }

@@ -13,6 +13,7 @@ enum AgentIcon {
         "hermes": ["com.nousresearch.hermes", "com.nousresearch.hermes.setup"],
         "amp": ["com.ampcode.amp.macos"],
         "antigravity": ["com.google.antigravity", "com.google.antigravity-ide"],
+        "cursor": ["com.todesktop.230313mzl4w4u92"],
     ]
 
     static func image(for agent: String) -> NSImage? {

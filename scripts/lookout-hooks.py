@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Install or remove Lookout's hooks in Claude Code, Codex, Hermes, Amp and Antigravity.
+"""Install or remove Lookout's hooks in Claude Code, Codex, Hermes, Amp, Antigravity and Cursor.
 
-    python3 scripts/lookout-hooks.py install   [claude codex hermes amp antigravity]
-    python3 scripts/lookout-hooks.py uninstall [claude codex hermes amp antigravity]
+    python3 scripts/lookout-hooks.py install   [claude codex hermes amp antigravity cursor]
+    python3 scripts/lookout-hooks.py uninstall [claude codex hermes amp antigravity cursor]
     python3 scripts/lookout-hooks.py status
 
 For Hermes in another folder, or in Docker:
@@ -36,6 +36,8 @@ AMP_PLUGIN = HOME / ".config" / "amp" / "plugins" / "lookout.ts"
 # Read by the Antigravity app, the Antigravity IDE and the Antigravity CLI.
 ANTIGRAVITY_HOOKS = HOME / ".gemini" / "config" / "hooks.json"
 ANTIGRAVITY_NAME = "lookout"
+# Read by the Cursor app; user hooks don't run in Cursor's cloud agents.
+CURSOR_HOOKS = HOME / ".cursor" / "hooks.json"
 
 # (native event, Lookout state, matcher or None)
 CLAUDE_EVENTS = [
@@ -70,6 +72,17 @@ ANTIGRAVITY_EVENTS = [
     ("PreToolUse", "needs", "^ask_question$", '{"decision":"allow"}'),
     ("PostToolUse", "working", "^ask_question$", "{}"),
     ("Stop", "done", None, '{"decision":"stop"}'),
+]
+# (native event, Lookout state, JSON the hook prints)
+# Cursor treats output it can't parse as a refusal for some events, so every hook
+# prints a valid reply: beforeSubmitPrompt must allow the prompt, the rest take {}.
+# afterAgentResponse carries the agent's message, which Lookout keeps for the
+# "done" row, since Cursor's stop event has no text.
+CURSOR_EVENTS = [
+    ("beforeSubmitPrompt", "prompt", '{"continue":true}'),
+    ("afterAgentResponse", "reply", "{}"),
+    ("stop", "done", "{}"),
+    ("sessionEnd", "end", "{}"),
 ]
 HERMES_BEGIN = "# >>> lookout hooks (managed by lookout-hooks.py; remove this block to uninstall)"
 HERMES_END = "# <<< lookout hooks"
@@ -338,11 +351,49 @@ def antigravity(install):
         print("  New Antigravity conversations pick this up; restart the app or IDE if they don't.")
 
 
+# --- Cursor: {"version": 1, "hooks": {event: [handlers]}} ----------------
+
+def cursor(install):
+    print("Cursor")
+    path = CURSOR_HOOKS
+    data = {"version": 1}
+    if path.exists():
+        try:
+            data = json.loads(path.read_text(encoding="utf-8") or "{}")
+        except json.JSONDecodeError as e:
+            print(f"  skipped: {path} is not valid JSON ({e})")
+            return
+    hooks = data.get("hooks") if isinstance(data, dict) else None
+    if hooks is None:
+        hooks = {}
+    if not isinstance(data, dict) or not isinstance(hooks, dict):
+        print(f"  skipped: {path} doesn't have the expected layout")
+        return
+    backup(path)
+    for event in list(hooks):
+        if isinstance(hooks[event], list):
+            hooks[event] = [h for h in hooks[event] if not (isinstance(h, dict) and ours(h.get("command")))]
+            if not hooks[event]:
+                del hooks[event]
+    if install:
+        for event, state, reply in CURSOR_EVENTS:
+            # The reporter prints nothing, so the reply comes from printf after it.
+            hooks.setdefault(event, []).append(
+                {"command": f"{command('cursor', state)}; printf '%s\\n' '{reply}'", "timeout": 5})
+    data.setdefault("version", 1)
+    data["hooks"] = hooks
+    write_json(path, data)
+    print(f"  {'installed' if install else 'removed'}: {path}")
+    if install:
+        print("  Cursor reloads this file on its own; restart Cursor if the hooks don't show")
+        print("  under Settings > Hooks.")
+
+
 def status():
     print(f"reporter: {REPORTER} ({'present' if REPORTER.exists() else 'missing'})")
     for name, path in [("claude", CLAUDE_SETTINGS), ("codex", CODEX_HOOKS),
                        ("hermes", HERMES_CONFIG), ("amp", AMP_PLUGIN),
-                       ("antigravity", ANTIGRAVITY_HOOKS)]:
+                       ("antigravity", ANTIGRAVITY_HOOKS), ("cursor", CURSOR_HOOKS)]:
         if name == "amp":
             installed = path.exists()  # the plugin builds the reporter path from $HOME
         else:
@@ -350,7 +401,7 @@ def status():
         print(f"{name:11} {'installed' if installed else 'not installed'}  {path}")
 
 
-AGENTS = {"claude": claude, "codex": codex, "hermes": hermes, "amp": amp, "antigravity": antigravity}
+AGENTS = {"claude": claude, "codex": codex, "hermes": hermes, "amp": amp, "antigravity": antigravity, "cursor": cursor}
 
 
 def main(argv):

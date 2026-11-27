@@ -97,9 +97,14 @@ final class Store: ObservableObject {
             sessions[key] = s
             if previous != .needsInput { onAttention?(s) }
             return
+        case "reply":
+            // The agent's latest message, from agents whose "done" event has no text
+            // (Cursor). It shows once the session is done.
+            if let d = e.detail { s.detail = d }
         case "done":
             s.state = .done
-            s.detail = e.detail
+            // Keep a message from "reply" unless this event has its own.
+            if let d = e.detail { s.detail = d } else if previous != .working { s.detail = nil }
             sessions[key] = s
             if previous != .done { onAttention?(s) }
             return
