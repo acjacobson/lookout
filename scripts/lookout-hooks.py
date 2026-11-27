@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Install or remove Lookout's hooks in Claude Code, Codex, Hermes and Amp.
+"""Install or remove Lookout's hooks in Claude Code, Codex, Hermes, Amp and Antigravity.
 
-    python3 scripts/lookout-hooks.py install   [claude codex hermes amp]
-    python3 scripts/lookout-hooks.py uninstall [claude codex hermes amp]
+    python3 scripts/lookout-hooks.py install   [claude codex hermes amp antigravity]
+    python3 scripts/lookout-hooks.py uninstall [claude codex hermes amp antigravity]
     python3 scripts/lookout-hooks.py status
 
 For Hermes in another folder, or in Docker:
@@ -33,6 +33,9 @@ CODEX_HOOKS = HOME / ".codex" / "hooks.json"
 HERMES_CONFIG = HOME / ".hermes" / "config.yaml"
 HERMES_ALLOWLIST = HOME / ".hermes" / "shell-hooks-allowlist.json"
 AMP_PLUGIN = HOME / ".config" / "amp" / "plugins" / "lookout.ts"
+# Read by the Antigravity app, the Antigravity IDE and the Antigravity CLI.
+ANTIGRAVITY_HOOKS = HOME / ".gemini" / "config" / "hooks.json"
+ANTIGRAVITY_NAME = "lookout"
 
 # (native event, Lookout state, matcher or None)
 CLAUDE_EVENTS = [
@@ -57,6 +60,16 @@ HERMES_EVENTS = [
     ("on_human_input_resolved", "working"),
     ("on_session_end", "done"),
     ("on_session_finalize", "end"),
+]
+# (native event, Lookout state, matcher or None, JSON the hook prints)
+# Antigravity requires a "decision" from PreToolUse and Stop hooks. "allow" leaves
+# the tool to the normal permission rules, and any Stop decision other than
+# "continue" lets the agent stop, so neither changes what the agent does.
+ANTIGRAVITY_EVENTS = [
+    ("PreInvocation", "prompt", None, "{}"),
+    ("PreToolUse", "needs", "^ask_question$", '{"decision":"allow"}'),
+    ("PostToolUse", "working", "^ask_question$", "{}"),
+    ("Stop", "done", None, '{"decision":"stop"}'),
 ]
 HERMES_BEGIN = "# >>> lookout hooks (managed by lookout-hooks.py; remove this block to uninstall)"
 HERMES_END = "# <<< lookout hooks"
@@ -290,18 +303,54 @@ def amp(install):
         print(f"  removed: {AMP_PLUGIN}")
 
 
+# --- Antigravity: a named entry in ~/.gemini/config/hooks.json ------------
+
+def antigravity(install):
+    print("Antigravity")
+    path = ANTIGRAVITY_HOOKS
+    data = {}
+    if path.exists():
+        try:
+            data = json.loads(path.read_text(encoding="utf-8") or "{}")
+        except json.JSONDecodeError as e:
+            print(f"  skipped: {path} is not valid JSON ({e})")
+            return
+        if not isinstance(data, dict):
+            print(f"  skipped: {path} is not a JSON object")
+            return
+    backup(path)
+    data.pop(ANTIGRAVITY_NAME, None)
+    if install:
+        events = {}
+        for event, state, matcher, reply in ANTIGRAVITY_EVENTS:
+            # The reporter prints nothing, so the reply comes from printf after it.
+            handler = {"type": "command", "command": f"{command('antigravity', state)}; printf '%s\\n' '{reply}'",
+                       "timeout": 5}
+            if event in ("PreToolUse", "PostToolUse"):
+                events.setdefault(event, []).append({"matcher": matcher or "*", "hooks": [handler]})
+            else:
+                # The other events take a list of handlers, with no matcher.
+                events.setdefault(event, []).append(handler)
+        data[ANTIGRAVITY_NAME] = events
+    write_json(path, data)
+    print(f"  {'installed' if install else 'removed'}: {path} (hook \"{ANTIGRAVITY_NAME}\")")
+    if install:
+        print("  New Antigravity conversations pick this up; restart the app or IDE if they don't.")
+
+
 def status():
     print(f"reporter: {REPORTER} ({'present' if REPORTER.exists() else 'missing'})")
     for name, path in [("claude", CLAUDE_SETTINGS), ("codex", CODEX_HOOKS),
-                       ("hermes", HERMES_CONFIG), ("amp", AMP_PLUGIN)]:
+                       ("hermes", HERMES_CONFIG), ("amp", AMP_PLUGIN),
+                       ("antigravity", ANTIGRAVITY_HOOKS)]:
         if name == "amp":
             installed = path.exists()  # the plugin builds the reporter path from $HOME
         else:
             installed = path.exists() and str(REPORTER) in path.read_text(encoding="utf-8", errors="replace")
-        print(f"{name:7} {'installed' if installed else 'not installed'}  {path}")
+        print(f"{name:11} {'installed' if installed else 'not installed'}  {path}")
 
 
-AGENTS = {"claude": claude, "codex": codex, "hermes": hermes, "amp": amp}
+AGENTS = {"claude": claude, "codex": codex, "hermes": hermes, "amp": amp, "antigravity": antigravity}
 
 
 def main(argv):

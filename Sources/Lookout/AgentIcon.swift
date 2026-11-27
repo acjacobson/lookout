@@ -12,6 +12,7 @@ enum AgentIcon {
         "codex": ["com.openai.codex", "com.openai.chat"],
         "hermes": ["com.nousresearch.hermes", "com.nousresearch.hermes.setup"],
         "amp": ["com.ampcode.amp.macos"],
+        "antigravity": ["com.google.antigravity", "com.google.antigravity-ide"],
     ]
 
     static func image(for agent: String) -> NSImage? {

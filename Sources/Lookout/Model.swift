@@ -34,6 +34,7 @@ struct Session: Codable, Identifiable {
         case "codex": return "Codex"
         case "hermes": return "Hermes"
         case "amp": return "Amp"
+        case "antigravity": return "Antigravity"
         default: return agent.capitalized
         }
     }
@@ -81,11 +82,20 @@ struct Session: Codable, Identifiable {
             if term == nil {
                 return ["com.nousresearch.hermes", "com.nousresearch.hermes.setup"] + [bundle].compactMap { $0 }
             }
+        case "antigravity":
+            if let app = Session.antigravityApps[entrypoint ?? ""] { return [app] }
         default:
             break
         }
         return []
     }
+
+    /// Antigravity's apps by the data folder name its hooks report in `transcriptPath`,
+    /// which Event stores as the entrypoint. The CLI ("antigravity-cli") runs in a terminal.
+    static let antigravityApps = [
+        "antigravity": "com.google.antigravity",
+        "antigravity-ide": "com.google.antigravity-ide",
+    ]
 
     var displayTitle: String {
         if let title, !title.isEmpty { return title }
@@ -146,16 +156,21 @@ struct Event {
         event.entrypoint = nonEmpty(header["entrypoint"] as? String)
         event.host = nonEmpty(header["host"] as? String)
 
-        let idKeys = ["session_id", "thread_id", "thread-id", "threadId", "sessionId"]
+        let idKeys = ["session_id", "thread_id", "thread-id", "threadId", "sessionId", "conversationId"]
         event.sessionId = string(payload, idKeys)
         if event.sessionId == nil, !body.isEmpty {
             // Payload cut off at 1 MB or not JSON: look for the id in the raw text.
             event.sessionId = regexID(in: body)
         }
-        event.cwd = string(payload, ["cwd", "workspace"])
+        event.cwd = string(payload, ["cwd", "workspace"]) ?? (payload["workspacePaths"] as? [String])?.first
         event.title = string(payload, ["title"])
-        event.prompt = stripInjected(string(payload, ["prompt", "user_message"]))
-        event.detail = detail(for: state, payload)
+        event.prompt = stripInjected(string(payload, ["prompt", "user_message", "lastUserInput"]))
+        if agent == "antigravity" {
+            event.entrypoint = antigravityDataFolder(payload) ?? event.entrypoint
+            event.detail = antigravityDetail(for: state, payload)
+        } else {
+            event.detail = detail(for: state, payload)
+        }
         return event
     }
 
@@ -192,6 +207,62 @@ struct Event {
         default:
             return nil
         }
+    }
+
+    /// The name of the data folder in Antigravity's `transcriptPath`, which tells the
+    /// app, the IDE and the CLI apart: `~/.gemini/<folder>/brain/<id>/…/transcript.jsonl`.
+    static func antigravityDataFolder(_ p: [String: Any]) -> String? {
+        guard let path = string(p, ["transcriptPath"]) else { return nil }
+        let parts = path.split(separator: "/").map(String.init)
+        guard let i = parts.lastIndex(of: "brain"), i > 0 else { return nil }
+        return parts[i - 1]
+    }
+
+    private static func antigravityDetail(for state: String, _ p: [String: Any]) -> String? {
+        switch state {
+        case "needs":
+            // PreToolUse for the ask_question tool: show the question.
+            let call = p["toolCall"] as? [String: Any] ?? [:]
+            let args = call["args"] as? [String: Any] ?? [:]
+            if let q = string(args, ["question", "Question", "prompt", "Prompt", "title", "Title"]) {
+                return tidy(q)
+            }
+            for key in ["questions", "Questions"] {
+                if let list = args[key] as? [[String: Any]], let first = list.first,
+                   let q = string(first, ["question", "Question", "text", "Text"]) {
+                    return tidy(q)
+                }
+            }
+            return tidy(call["name"] as? String)
+        case "done":
+            if string(p, ["terminationReason"]) == "error" {
+                return tidy("Error: \(string(p, ["error"]) ?? "the agent stopped")")
+            }
+            return tidy(lastAntigravityReply(string(p, ["transcriptPath"])))
+        default:
+            return nil
+        }
+    }
+
+    /// The agent's last reply, from the end of the conversation's transcript.jsonl.
+    /// Each line is one step; replies have source MODEL and type PLANNER_RESPONSE,
+    /// with the text in `content` (null for steps that only call tools).
+    static func lastAntigravityReply(_ path: String?) -> String? {
+        guard let path, let handle = FileHandle(forReadingAtPath: (path as NSString).expandingTildeInPath)
+        else { return nil }
+        defer { try? handle.close() }
+        let size = (try? handle.seekToEnd()) ?? 0
+        let window: UInt64 = 256 * 1024
+        try? handle.seek(toOffset: size > window ? size - window : 0)
+        guard let data = try? handle.readToEnd(), let text = String(data: data, encoding: .utf8) else { return nil }
+        for line in text.split(separator: "\n").reversed() {
+            guard let obj = (try? JSONSerialization.jsonObject(with: Data(line.utf8))) as? [String: Any],
+                  obj["source"] as? String == "MODEL", obj["type"] as? String == "PLANNER_RESPONSE",
+                  let content = obj["content"] as? String, !content.isEmpty
+            else { continue }
+            return content
+        }
+        return nil
     }
 
     private static func nonEmpty(_ s: String?) -> String? {
@@ -251,7 +322,7 @@ struct Event {
 
     private static func regexID(in body: Data) -> String? {
         guard let text = String(data: body.prefix(4096), encoding: .utf8),
-              let re = try? NSRegularExpression(pattern: #""(?:session_id|thread_id|thread-id)"\s*:\s*"([^"]+)""#),
+              let re = try? NSRegularExpression(pattern: #""(?:session_id|thread_id|thread-id|conversationId)"\s*:\s*"([^"]+)""#),
               let m = re.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
               let r = Range(m.range(at: 1), in: text)
         else { return nil }

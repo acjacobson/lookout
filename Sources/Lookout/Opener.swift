@@ -26,6 +26,9 @@ enum Opener {
             if openURL("hermes://open/sessions/\(escaped(s.sessionId))") { return }
             if activate(bundle: s.bundle) || activate(bundle: "com.nousresearch.hermes")
                 || activate(bundle: "com.nousresearch.hermes.setup") { return }
+        case "antigravity":
+            // Antigravity has no link to a conversation, so bring its app forward.
+            if let app = Session.antigravityApps[s.entrypoint ?? ""], activate(bundle: app) { return }
         default:
             break
         }
