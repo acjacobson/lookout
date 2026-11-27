@@ -71,3 +71,7 @@ Lookout doesn't notify you about a session whose app is already in front, since 
 
 - [Agents on other machines](docs/remote-agents.md): show sessions from agents on a server or another computer, over Tailscale.
 - [How Lookout works](docs/how-it-works.md): the hooks it installs for each agent, how it tracks sessions, and how to install hooks from a terminal.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
