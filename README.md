@@ -4,6 +4,8 @@ Lookout is a menu bar app for macOS that tells you when an AI coding agent needs
 
 It works with Claude Code, Codex, Cursor, Antigravity, Amp and Hermes. You choose which ones it watches.
 
+<img src="docs/images/panel.png" alt="The Lookout panel, listing four finished sessions from Cursor, Antigravity, Codex and Claude Code, each with its prompt and the start of the agent's reply" width="440">
+
 ## What you need
 
 - macOS 13 or later.
