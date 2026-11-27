@@ -29,6 +29,11 @@ enum Opener {
             if openURL("hermes://open/sessions/\(escaped(s.sessionId))") { return }
             if activate(bundle: s.bundle) || activate(bundle: "com.nousresearch.hermes")
                 || activate(bundle: "com.nousresearch.hermes.setup") { return }
+        case "cursor":
+            // Cursor's own menu bar icon opens a chat with this link, which brings up
+            // the Agents window on that chat. Not documented by Cursor.
+            if s.bundle == Session.cursorApp,
+               openURL("cursor://anysphere.cursor-deeplink/agent?id=\(query(s.sessionId))") { return }
         case "antigravity":
             // Antigravity has no link to a conversation, so bring its app forward.
             if let app = Session.antigravityApps[s.entrypoint ?? ""], activate(bundle: app) { return }
@@ -60,6 +65,10 @@ enum Opener {
             }
         }
         return nil
+    }
+
+    private static func query(_ s: String) -> String {
+        s.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed.subtracting(CharacterSet(charactersIn: "&=+"))) ?? s
     }
 
     private static func escaped(_ s: String) -> String {

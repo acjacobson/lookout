@@ -42,8 +42,8 @@ Start a session in one of your agents. It appears in the panel while it works, a
 
 - **Claude Code:** sessions that were already open before you connected it need a restart.
 - **Codex:** Codex runs new hooks only after you trust them. Run `/hooks` in the Codex CLI, or open Settings > Hooks in the ChatGPT app, and approve the Lookout entries.
-- **Cursor:** clicking a session brings Cursor forward but can't open the chat. Lookout can't tell when Cursor waits for your approval, so those chats show as working.
-- **Antigravity:** clicking a session brings Antigravity forward but can't open the conversation. If new conversations don't show up in Lookout, restart Antigravity.
+- **Cursor:** clicking a session opens its chat in Cursor's Agents window. Cursor's hooks don't report when a chat waits for your approval, so such a chat may still show as working.
+- **Antigravity:** clicking a session brings the Antigravity app or IDE forward, without selecting its conversation. If new conversations don't show up in Lookout, restart Antigravity.
 - **Amp:** needs the Amp CLI, signed in with `amp login`. Lookout uses it to follow your threads, including threads from the Amp app.
 - **Hermes:** restart Hermes after connecting it.
 
