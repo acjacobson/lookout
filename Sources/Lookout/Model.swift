@@ -40,15 +40,16 @@ struct Session: Codable, Identifiable {
     }
 
     /// A short name for the working folder: the repository for a worktree under
-    /// `<repo>/.claude/worktrees/…`, "scratch" for the Claude app's scratch folders,
-    /// otherwise the last path component without a date or a generated ID suffix.
+    /// `<repo>/.claude/worktrees/…`, none for the Claude app's scratch folders (their
+    /// names are generated and say nothing about the session), otherwise the last path
+    /// component without a date or a generated ID suffix.
     var folder: String? {
         guard let cwd, !cwd.isEmpty else { return nil }
         let parts = cwd.split(separator: "/").map(String.init)
         if let i = parts.lastIndex(of: "worktrees"), i >= 2, parts[i - 1].hasPrefix(".") {
             return parts[i - 2]
         }
-        if parts.contains("scratch-workspaces") { return "scratch" }
+        if parts.contains("scratch-workspaces") { return nil }
         guard let last = parts.last else { return nil }
         return Session.trimGenerated(last)
     }
