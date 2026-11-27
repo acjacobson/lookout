@@ -12,6 +12,8 @@ final class AmpWatcher {
     private var buffer = Data()
     private var working: [String: Bool] = [:]
     private var restartDelay: TimeInterval = 5
+    /// False after stop(), so a pending restart doesn't bring the watcher back.
+    private var enabled = false
 
     init(store: Store) {
         self.store = store
@@ -26,6 +28,7 @@ final class AmpWatcher {
     }
 
     func start() {
+        enabled = true
         guard process == nil, let amp = Self.ampPath else { return }
         let p = Process()
         // A shell wrapper ends `amp top` when Lookout goes away. If Lookout is killed,
@@ -62,6 +65,7 @@ final class AmpWatcher {
     }
 
     func stop() {
+        enabled = false
         process?.terminationHandler = nil
         process?.terminate()
         process = nil
@@ -73,7 +77,10 @@ final class AmpWatcher {
         // Not signed in, offline, or Amp updated itself: try again, waiting longer each time.
         let delay = restartDelay
         restartDelay = min(restartDelay * 2, 300)
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in self?.start() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self, self.enabled else { return }
+            self.start()
+        }
     }
 
     private func receive(_ data: Data) {

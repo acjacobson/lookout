@@ -36,6 +36,7 @@ if xcrun --find actool >/dev/null 2>&1; then
 fi
 cp scripts/lookout-report "$app/Contents/Resources/lookout-report"
 cp scripts/lookout-hooks.py "$app/Contents/Resources/lookout-hooks.py"
+cp integrations/amp/lookout.ts "$app/Contents/Resources/lookout.ts"
 # Sign with an Apple Development certificate when one exists. macOS refuses
 # notifications from ad hoc signed apps ("Notifications are not allowed for this
 # application"). Set LOOKOUT_SIGN_IDENTITY to choose a different identity.

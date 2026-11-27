@@ -8,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let notifier = Notifier()
     lazy var listener = Listener(home: store.home, inbox: store.inbox)
     lazy var amp = AmpWatcher(store: store)
+    lazy var agents = AgentSettings(amp: amp)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         notifier.onOpen = { [weak self] key in self?.open(key) }
@@ -26,7 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         notifier.setUp()
         store.start()
         listener.start()
-        amp.start()
+        if agents.ampEnabled { amp.start() }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -64,7 +65,7 @@ struct LookoutApp: App {
 
     var body: some Scene {
         MenuBarExtra {
-            MenuContent(store: delegate.store, listener: delegate.listener,
+            MenuContent(store: delegate.store, listener: delegate.listener, agents: delegate.agents,
                         open: delegate.open, copyRemoteSetup: delegate.copyRemoteSetup)
         } label: {
             MenuLabel(store: delegate.store)

@@ -6,6 +6,7 @@ import ServiceManagement
 struct MenuContent: View {
     @ObservedObject var store: Store
     @ObservedObject var listener: Listener
+    @ObservedObject var agents: AgentSettings
     let open: (String) -> Void
     let copyRemoteSetup: () -> Void
 
@@ -24,10 +25,16 @@ struct MenuContent: View {
             Divider()
 
             if total == 0 {
-                Text("No agent sessions yet")
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 24)
+                VStack(spacing: 4) {
+                    Text("No agent sessions yet")
+                    if !agents.connected.values.contains(true) {
+                        Text("Connect your agents from the gear menu.")
+                            .font(.system(size: 12))
+                    }
+                }
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 24)
             } else {
                 let list = VStack(alignment: .leading, spacing: 0) {
                     section("Needs a decision", needs)
@@ -51,6 +58,8 @@ struct MenuContent: View {
         .fixedSize(horizontal: false, vertical: true)
         .background(WindowFitter())
         .background(PanelBackground().ignoresSafeArea())
+        // Agents may have been set up from a terminal since the panel last opened.
+        .onAppear { agents.refresh() }
     }
 
     // MARK: Parts
@@ -63,7 +72,7 @@ struct MenuContent: View {
             Text(summary(needs: needs, done: done, working: working))
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
-            SettingsMenu(listener: listener, copyRemoteSetup: copyRemoteSetup)
+            SettingsMenu(listener: listener, agents: agents, copyRemoteSetup: copyRemoteSetup)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
@@ -285,25 +294,42 @@ struct AgentIconView: View {
     }
 }
 
-/// The gear menu in the header: notifications, remote agent setup and Launch at Login.
+/// The gear menu in the header: the agents to report on, notifications, agents on
+/// other machines and Launch at Login.
 struct SettingsMenu: View {
     @ObservedObject var listener: Listener
+    @ObservedObject var agents: AgentSettings
     let copyRemoteSetup: () -> Void
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @AppStorage(Notifier.enabledKey) private var notificationsEnabled = true
 
     var body: some View {
         Menu {
+            Section("Agents") {
+                ForEach(AgentSettings.all) { agent in
+                    Toggle(label(agent), isOn: Binding(
+                        get: { agents.connected[agent.id] ?? false },
+                        set: { agents.set(agent.id, on: $0) }
+                    ))
+                    // Amp needs its CLI, which Lookout runs to watch threads.
+                    .disabled(agents.busy.contains(agent.id)
+                              || (agent.id == "amp" && agents.found["amp"] == false && agents.connected["amp"] != true))
+                }
+            }
+            Divider()
             Toggle("Notifications", isOn: $notificationsEnabled)
             Divider()
+            Toggle("Agents on Other Machines", isOn: Binding(
+                get: { listener.config.enabled },
+                set: { listener.setEnabled($0) }
+            ))
             if let base = listener.baseURL {
-                Text("Remote agents: \(base)")
+                Text("Listening on \(base)")
                 Button("Copy Setup Command for Another Machine") { copyRemoteSetup() }
-                Divider()
             } else if listener.config.enabled {
-                Text("Remote agents: waiting for Tailscale")
-                Divider()
+                Text("Waiting for Tailscale")
             }
+            Divider()
             Toggle("Launch at Login", isOn: Binding(
                 get: { launchAtLogin },
                 set: { on in
@@ -321,6 +347,12 @@ struct SettingsMenu: View {
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
+    }
+
+    private func label(_ agent: AgentSettings.Agent) -> String {
+        if agents.busy.contains(agent.id) { return "\(agent.name) …" }
+        if agents.found[agent.id] == false, agents.connected[agent.id] != true { return "\(agent.name) (not installed)" }
+        return agent.name
     }
 }
 

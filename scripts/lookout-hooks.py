@@ -3,7 +3,7 @@
 
     python3 scripts/lookout-hooks.py install   [claude codex hermes amp antigravity cursor]
     python3 scripts/lookout-hooks.py uninstall [claude codex hermes amp antigravity cursor]
-    python3 scripts/lookout-hooks.py status
+    python3 scripts/lookout-hooks.py status [--json]
 
 For Hermes in another folder, or in Docker:
 
@@ -24,7 +24,8 @@ import time
 from pathlib import Path
 
 HOME = Path.home()
-REPO = Path(__file__).resolve().parent.parent
+HERE = Path(__file__).resolve().parent
+REPO = HERE.parent
 LOOKOUT = Path(os.environ.get("LOOKOUT_HOME", HOME / ".lookout"))
 REPORTER = LOOKOUT / "bin" / "lookout-report"
 BACKUPS = LOOKOUT / "backups"
@@ -117,8 +118,10 @@ def write_json(path, data):
 def install_reporter():
     REPORTER.parent.mkdir(parents=True, exist_ok=True)
     (LOOKOUT / "inbox").mkdir(parents=True, exist_ok=True)
-    source = REPO / "scripts" / "lookout-report"
-    if source.exists():
+    # From the repository, or from Lookout.app's Resources folder, where the app
+    # keeps a copy next to this script.
+    source = next((p for p in (REPO / "scripts" / "lookout-report", HERE / "lookout-report") if p.exists()), None)
+    if source:
         shutil.copy2(source, REPORTER)
     elif not REPORTER.exists():
         # Running on another machine from a downloaded copy of this script.
@@ -312,7 +315,8 @@ def hermes_allowlist(install, reporter=None):
 
 def amp(install):
     print("Amp")
-    source = REPO / "integrations" / "amp" / "lookout.ts"
+    source = next((p for p in (REPO / "integrations" / "amp" / "lookout.ts", HERE / "lookout.ts") if p.exists()),
+                  REPO / "integrations" / "amp" / "lookout.ts")
     if install and not source.exists():
         # A downloaded copy of this script, on another machine. Amp threads run on
         # Amp's servers, so the Mac running Lookout already sees them through amp top.
@@ -408,8 +412,8 @@ def cursor(install):
         print("  under Settings > Hooks.")
 
 
-def status():
-    print(f"reporter: {REPORTER} ({'present' if REPORTER.exists() else 'missing'})")
+def status(as_json=False):
+    rows = {}
     for name, path in [("claude", CLAUDE_SETTINGS), ("codex", CODEX_HOOKS),
                        ("hermes", HERMES_CONFIG), ("amp", AMP_PLUGIN),
                        ("antigravity", ANTIGRAVITY_HOOKS), ("cursor", CURSOR_HOOKS)]:
@@ -417,6 +421,13 @@ def status():
             installed = path.exists()  # the plugin builds the reporter path from $HOME
         else:
             installed = path.exists() and str(REPORTER) in path.read_text(encoding="utf-8", errors="replace")
+        rows[name] = (installed, path)
+    if as_json:
+        # Read by Lookout.app's Agents menu.
+        print(json.dumps({n: {"connected": c, "found": found(n), "path": str(p)} for n, (c, p) in rows.items()}))
+        return
+    print(f"reporter: {REPORTER} ({'present' if REPORTER.exists() else 'missing'})")
+    for name, (installed, path) in rows.items():
         print(f"{name:11} {'installed' if installed else 'not installed'}  {path}")
 
 
@@ -447,7 +458,7 @@ def main(argv):
         print(__doc__)
         return 1
     if argv[0] == "status":
-        status()
+        status("--json" in argv[1:])
         return 0
     args = list(argv[1:])
     for flag, key in (("--hermes-home", "home"), ("--container-home", "container_home")):

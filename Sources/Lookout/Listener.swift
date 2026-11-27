@@ -3,7 +3,8 @@ import Network
 
 /// Settings in ~/.lookout/config.json. Created with a random token on first launch.
 struct ListenerConfig: Codable {
-    var enabled: Bool = true
+    /// Off until turned on in the gear menu: most people don't run agents elsewhere.
+    var enabled: Bool = false
     var port: UInt16 = 47821
     var token: String = ListenerConfig.randomToken()
 
@@ -19,13 +20,17 @@ struct ListenerConfig: Codable {
             return config
         }
         let config = ListenerConfig()
+        config.save(to: url)
+        return config
+    }
+
+    func save(to url: URL) {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        if let data = try? encoder.encode(config) {
+        if let data = try? encoder.encode(self) {
             try? data.write(to: url, options: .atomic)
             try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
         }
-        return config
     }
 }
 
@@ -38,8 +43,9 @@ struct ListenerConfig: Codable {
 ///   GET  /installer  the lookout-hooks.py installer
 final class Listener: ObservableObject {
     @Published private(set) var address: String?
+    @Published private(set) var config: ListenerConfig
 
-    let config: ListenerConfig
+    private let configURL: URL
     private let inbox: URL
     private var listener: NWListener?
     private var retry: Timer?
@@ -47,14 +53,30 @@ final class Listener: ObservableObject {
     private static let maxBody = 2 * 1024 * 1024
 
     init(home: URL, inbox: URL) {
-        self.config = ListenerConfig.load(from: home.appendingPathComponent("config.json"))
+        configURL = home.appendingPathComponent("config.json")
+        config = ListenerConfig.load(from: configURL)
         self.inbox = inbox
     }
 
     var baseURL: String? { address.map { "http://\($0):\(config.port)" } }
 
+    /// Turns the server on or off from the gear menu, and remembers the choice.
+    func setEnabled(_ on: Bool) {
+        config.enabled = on
+        config.save(to: configURL)
+        on ? start() : stop()
+    }
+
+    func stop() {
+        retry?.invalidate()
+        retry = nil
+        listener?.cancel()
+        listener = nil
+        address = nil
+    }
+
     func start() {
-        guard config.enabled else { return }
+        guard config.enabled, retry == nil else { return }
         bind()
         // Tailscale may come up after Lookout, or its address may change.
         retry = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
