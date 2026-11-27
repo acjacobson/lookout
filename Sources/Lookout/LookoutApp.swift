@@ -44,7 +44,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             "printf 'LOOKOUT_URL=%s\\nLOOKOUT_TOKEN=%s\\n' '\(base)' '\(token)' > ~/.lookout/remote.env",
             "chmod 600 ~/.lookout/remote.env",
             "curl -fsS \(base)/installer -o ~/.lookout/lookout-hooks.py",
-            "python3 ~/.lookout/lookout-hooks.py install hermes",
+            // Installs hooks for every agent found on that machine.
+            "python3 ~/.lookout/lookout-hooks.py install",
         ].joined(separator: " && ")
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(cmd, forType: .string)

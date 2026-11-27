@@ -10,7 +10,8 @@ For Hermes in another folder, or in Docker:
     python3 scripts/lookout-hooks.py install hermes --hermes-home /home/me/.hermes \\
         --container-home /opt/data
 
-With no agent names, every agent is handled. Each file is backed up to
+With no agent names, install handles every agent found on this machine (its
+config folder or app exists), and uninstall handles every agent. Each file is backed up to
 ~/.lookout/backups before it changes. Hooks already in a file are kept: Lookout
 only adds entries whose command starts with its reporter path, and uninstall
 only removes those.
@@ -157,6 +158,9 @@ def add_ours(hooks, agent, events, timeout):
 
 
 def hooks_file(path, agent, events, timeout, install):
+    if not install and not path.exists():
+        print(f"  nothing to remove: {path} not found")
+        return False
     data = {}
     if path.exists():
         try:
@@ -245,8 +249,9 @@ def hermes(install):
         if found:
             print("  Hermes homes found on this machine; rerun with one of them:")
             for f in found:
-                print(f"    python3 {sys.argv[0]} install hermes --hermes-home {f}")
-        print("  If Hermes runs in Docker, also pass --container-home /opt/data (its HERMES_HOME inside the container).")
+                print(f"    python3 {sys.argv[0]} {'install' if install else 'uninstall'} hermes --hermes-home {f}")
+        if install:
+            print("  If Hermes runs in Docker, also pass --container-home /opt/data (its HERMES_HOME inside the container).")
         return
     if home and install:
         # Put the reporter and remote.env inside the Hermes home, so a container that
@@ -307,13 +312,21 @@ def hermes_allowlist(install, reporter=None):
 
 def amp(install):
     print("Amp")
+    source = REPO / "integrations" / "amp" / "lookout.ts"
+    if install and not source.exists():
+        # A downloaded copy of this script, on another machine. Amp threads run on
+        # Amp's servers, so the Mac running Lookout already sees them through amp top.
+        print("  skipped: the Amp plugin isn't needed here; Lookout on the Mac sees all your Amp threads")
+        return
     if install:
         AMP_PLUGIN.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(REPO / "integrations" / "amp" / "lookout.ts", AMP_PLUGIN)
+        shutil.copy2(source, AMP_PLUGIN)
         print(f"  installed: {AMP_PLUGIN}")
     elif AMP_PLUGIN.exists():
         AMP_PLUGIN.unlink()
         print(f"  removed: {AMP_PLUGIN}")
+    else:
+        print(f"  nothing to remove: {AMP_PLUGIN} not found")
 
 
 # --- Antigravity: a named entry in ~/.gemini/config/hooks.json ------------
@@ -321,6 +334,9 @@ def amp(install):
 def antigravity(install):
     print("Antigravity")
     path = ANTIGRAVITY_HOOKS
+    if not install and not path.exists():
+        print(f"  nothing to remove: {path} not found")
+        return
     data = {}
     if path.exists():
         try:
@@ -356,6 +372,9 @@ def antigravity(install):
 def cursor(install):
     print("Cursor")
     path = CURSOR_HOOKS
+    if not install and not path.exists():
+        print(f"  nothing to remove: {path} not found")
+        return
     data = {"version": 1}
     if path.exists():
         try:
@@ -401,6 +420,25 @@ def status():
         print(f"{name:11} {'installed' if installed else 'not installed'}  {path}")
 
 
+def found(name):
+    """Whether the agent appears to be installed on this machine."""
+    if name == "claude":
+        return (HOME / ".claude").exists()
+    if name == "codex":
+        return (HOME / ".codex").exists()
+    if name == "hermes":
+        return bool(HERMES_OPTS["home"] or os.environ.get("HERMES_HOME") or HERMES_CONFIG.exists()
+                    or hermes_candidates())
+    if name == "amp":
+        return ((HOME / ".config" / "amp").exists() or (HOME / ".amp").exists()
+                or shutil.which("amp") is not None)
+    if name == "antigravity":
+        return any((HOME / ".gemini").glob("antigravity*")) or ANTIGRAVITY_HOOKS.exists()
+    if name == "cursor":
+        return (HOME / ".cursor").exists()
+    return False
+
+
 AGENTS = {"claude": claude, "codex": codex, "hermes": hermes, "amp": amp, "antigravity": antigravity, "cursor": cursor}
 
 
@@ -420,12 +458,23 @@ def main(argv):
                 return 1
             HERMES_OPTS[key] = args[i + 1]
             del args[i:i + 2]
-    names = args or list(AGENTS)
+    install = argv[0] == "install"
+    if args:
+        names = args
+    elif install:
+        names = [n for n in AGENTS if found(n)]
+        missing = [n for n in AGENTS if n not in names]
+        if missing:
+            print(f"not found on this machine, skipped: {', '.join(missing)}")
+        if not names:
+            print("no supported agents found; name one to install it anyway")
+            return 1
+    else:
+        names = list(AGENTS)
     unknown = [n for n in names if n not in AGENTS]
     if unknown:
         print(f"unknown agent(s): {', '.join(unknown)}")
         return 1
-    install = argv[0] == "install"
     if install:
         install_reporter()
     for n in names:

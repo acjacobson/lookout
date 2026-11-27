@@ -1,5 +1,5 @@
 #!/bin/sh
-# Builds build/Lookout.app from the Swift package and signs it ad hoc.
+# Builds build/Lookout.app from the Swift package and signs it (see the end of this file).
 set -eu
 cd "$(dirname "$0")/.."
 
