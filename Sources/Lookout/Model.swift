@@ -152,6 +152,8 @@ struct Event {
         let body = newline < data.endIndex ? data[data.index(after: newline)...] : Data()
         let payload = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] ?? [:]
 
+        if isCursorRunningClaudeHooks(agent, header, payload) { return nil }
+
         var event = Event(agent: agent, state: isHermesTeardown(agent, state, payload) ? "end" : state,
                           date: fallbackDate)
         if let ts = header["ts"] as? Double, ts > 0, fallbackDate.timeIntervalSince1970 - ts > 5 {
@@ -179,6 +181,17 @@ struct Event {
             event.detail = detail(for: state, payload)
         }
         return event
+    }
+
+    /// Cursor also runs the hooks in ~/.claude/settings.json for its own chats
+    /// ("third-party hooks"), so each Cursor chat would show twice: once from its own
+    /// hooks and once as Claude Code. Claude Code always sets CLAUDE_CODE_ENTRYPOINT,
+    /// also in Cursor's terminal, so a "claude" event from Cursor without one is Cursor's.
+    static func isCursorRunningClaudeHooks(_ agent: String, _ header: [String: Any], _ payload: [String: Any]) -> Bool {
+        guard agent == "claude" else { return false }
+        if payload["cursor_version"] != nil { return true }
+        let entrypoint = header["entrypoint"] as? String ?? ""
+        return entrypoint.isEmpty && header["bundle"] as? String == Session.cursorApp
     }
 
     /// Hermes fires `on_session_end` after every turn, and also when the gateway or CLI

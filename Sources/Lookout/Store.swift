@@ -200,7 +200,10 @@ final class Store: ObservableObject {
         decoder.dateDecodingStrategy = .secondsSince1970
         if let list = try? decoder.decode([Session].self, from: data) {
             // Titles saved by earlier versions can still hold pasted text or tags.
-            let cleaned = list.map { s -> Session in
+            // Rows Cursor added through Claude Code's hooks before Lookout ignored them.
+            let cleaned = list.filter {
+                !($0.agent == "claude" && $0.entrypoint == nil && $0.bundle == Session.cursorApp)
+            }.map { s -> Session in
                 var s = s
                 s.title = Event.cleanTitle(s.title)
                 return s
