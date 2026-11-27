@@ -8,7 +8,6 @@ struct MenuContent: View {
     @ObservedObject var listener: Listener
     @ObservedObject var agents: AgentSettings
     let open: (String) -> Void
-    let copyRemoteSetup: () -> Void
 
     /// Above this many rows the list scrolls instead of growing the panel.
     private let maxRowsWithoutScrolling = 7
@@ -72,7 +71,7 @@ struct MenuContent: View {
             Text(summary(needs: needs, done: done, working: working))
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
-            SettingsMenu(listener: listener, agents: agents, copyRemoteSetup: copyRemoteSetup)
+            SettingsMenu(listener: listener, agents: agents)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
@@ -299,7 +298,6 @@ struct AgentIconView: View {
 struct SettingsMenu: View {
     @ObservedObject var listener: Listener
     @ObservedObject var agents: AgentSettings
-    let copyRemoteSetup: () -> Void
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @AppStorage(Notifier.enabledKey) private var notificationsEnabled = true
 
@@ -319,15 +317,23 @@ struct SettingsMenu: View {
             Divider()
             Toggle("Notifications", isOn: $notificationsEnabled)
             Divider()
-            Toggle("Agents on Other Machines", isOn: Binding(
-                get: { listener.config.enabled },
-                set: { listener.setEnabled($0) }
-            ))
-            if let base = listener.baseURL {
-                Text("Listening on \(base)")
-                Button("Copy Setup Command for Another Machine") { copyRemoteSetup() }
-            } else if listener.config.enabled {
-                Text("Waiting for Tailscale")
+            Menu("Other Machines") {
+                Toggle("Allow Other Machines", isOn: Binding(
+                    get: { listener.config.enabled },
+                    set: { listener.setEnabled($0) }
+                ))
+                if listener.config.enabled {
+                    if let address = listener.address {
+                        Text("Reachable over Tailscale at \(address)")
+                    } else {
+                        Text("Waiting for Tailscale on this Mac")
+                    }
+                    Divider()
+                    Button("Set Up a Machine…") { listener.copySetupCommand() }
+                        .disabled(listener.baseURL == nil)
+                    Button("Remove a Machine…") { listener.copyRemovalCommand() }
+                    Button("Disconnect All Machines…") { listener.resetToken() }
+                }
             }
             Divider()
             Toggle("Launch at Login", isOn: Binding(

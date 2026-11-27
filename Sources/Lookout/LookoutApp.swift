@@ -34,24 +34,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         amp.stop()
     }
 
-    /// A shell command that sets up another machine to report to this Lookout.
-    func copyRemoteSetup() {
-        guard let base = listener.baseURL else { return }
-        let token = listener.config.token
-        let cmd = [
-            "mkdir -p ~/.lookout/bin",
-            "curl -fsS \(base)/reporter -o ~/.lookout/bin/lookout-report",
-            "chmod 755 ~/.lookout/bin/lookout-report",
-            "printf 'LOOKOUT_URL=%s\\nLOOKOUT_TOKEN=%s\\n' '\(base)' '\(token)' > ~/.lookout/remote.env",
-            "chmod 600 ~/.lookout/remote.env",
-            "curl -fsS \(base)/installer -o ~/.lookout/lookout-hooks.py",
-            // Installs hooks for every agent found on that machine.
-            "python3 ~/.lookout/lookout-hooks.py install",
-        ].joined(separator: " && ")
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(cmd, forType: .string)
-    }
-
     func open(_ key: String) {
         guard let s = store.sessions[key] else { return }
         Opener.open(s)
@@ -66,7 +48,7 @@ struct LookoutApp: App {
     var body: some Scene {
         MenuBarExtra {
             MenuContent(store: delegate.store, listener: delegate.listener, agents: delegate.agents,
-                        open: delegate.open, copyRemoteSetup: delegate.copyRemoteSetup)
+                        open: delegate.open)
         } label: {
             MenuLabel(store: delegate.store)
         }

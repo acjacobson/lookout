@@ -3,6 +3,9 @@ import AppKit
 /// Brings up the app a session runs in, on that session where the app has a link for it.
 enum Opener {
     static func open(_ s: Session) {
+        // A session on another machine has no app or folder here. Hermes keeps its
+        // link, since the Hermes desktop app can be connected to a Hermes elsewhere.
+        if s.remoteHost != nil, s.agent != "hermes" { return }
         switch s.agent {
         case "claude":
             if s.entrypoint == "claude-desktop" || s.bundle == "com.anthropic.claudefordesktop" {

@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 import Network
 
 /// Settings in ~/.lookout/config.json. Created with a random token on first launch.
@@ -108,6 +108,62 @@ final class Listener: ObservableObject {
         }
         l.start(queue: queue)
         listener = l
+    }
+
+    // MARK: Setting up other machines
+
+    /// Copies a shell command that sets up another machine to report here, and says
+    /// where to paste it. The command carries this Mac's address and the token.
+    func copySetupCommand() {
+        guard let base = baseURL else { return }
+        let cmd = [
+            "mkdir -p ~/.lookout/bin",
+            "curl -fsS \(base)/reporter -o ~/.lookout/bin/lookout-report",
+            "chmod 755 ~/.lookout/bin/lookout-report",
+            "printf 'LOOKOUT_URL=%s\\nLOOKOUT_TOKEN=%s\\n' '\(base)' '\(config.token)' > ~/.lookout/remote.env",
+            "chmod 600 ~/.lookout/remote.env",
+            "curl -fsS \(base)/installer -o ~/.lookout/lookout-hooks.py",
+            // Installs hooks for every agent found on that machine.
+            "python3 ~/.lookout/lookout-hooks.py install",
+        ].joined(separator: " && ")
+        Self.copy(cmd, title: "Setup command copied",
+                  text: "Paste it into a terminal on the other machine, for example over SSH. That machine needs "
+                      + "Tailscale, curl and python3. The command installs hooks for the agents it finds there, "
+                      + "and their sessions then show up here with the machine's name. "
+                      + "Restart Hermes there, if it runs there, and trust the new hooks in Codex.")
+    }
+
+    /// Copies a shell command that removes Lookout's hooks and files from another machine.
+    func copyRemovalCommand() {
+        let cmd = "python3 ~/.lookout/lookout-hooks.py uninstall; rm -rf ~/.lookout"
+        Self.copy(cmd, title: "Removal command copied",
+                  text: "Paste it into a terminal on the machine to remove. It removes Lookout's hooks from "
+                      + "every agent there and deletes ~/.lookout. To cut off every machine at once instead, "
+                      + "choose Disconnect All Machines.")
+    }
+
+    /// Replaces the token after asking, so no machine set up so far can report here.
+    func resetToken() {
+        let alert = NSAlert()
+        alert.messageText = "Disconnect all other machines?"
+        alert.informativeText = "Lookout will stop accepting sessions from every machine set up so far. Their "
+            + "hooks stay in place and keep trying, without effect, until you remove them or set the machine up again."
+        alert.addButton(withTitle: "Disconnect")
+        alert.addButton(withTitle: "Cancel")
+        NSApp.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        config.token = ListenerConfig.randomToken()
+        config.save(to: configURL)
+    }
+
+    private static func copy(_ command: String, title: String, text: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(command, forType: .string)
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = text
+        NSApp.activate(ignoringOtherApps: true)
+        alert.runModal()
     }
 
     /// The IPv4 address in Tailscale's 100.64.0.0/10 range, if any interface has one.
